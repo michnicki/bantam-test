@@ -1,0 +1,249 @@
+---
+title: Build a Status Page
+description: Build a tiny "is-my-pigeon-there-yet" status page that dispatches a pigeon, subscribes to flight webhooks, and shows live delivery status.
+icon: activity
+sidebar_position: 1
+---
+
+# Build a Status Page
+
+In this project you'll build a single-page "is-my-pigeon-there-yet" tracker. A visitor clicks **Dispatch**, you launch a pigeon against the sandbox, and the page flips from `queued` to `in_flight` to `delivered` in real time — driven by a `flight.delivered` webhook rather than by polling.
+
+By the end you'll have touched four parts of the API: keys, [dispatch](/api-reference#dispatch-a-pigeon), [flights](/concepts/flights), and [webhooks](/guides/webhooks). Everything here runs in the sandbox, so no real birds are harmed.
+
+<Callout variant="info">
+
+You'll need somewhere your webhook can be reached over HTTPS. For local development a tunnel like `ngrok http 3000` works fine — point your webhook URL at the public tunnel address.
+
+</Callout>
+
+## What you're building
+
+```
+┌──────────────┐   POST /pigeons    ┌──────────────────┐
+│  Status page │ ─────────────────► │  Pigeon Post API │
+│  (your app)  │ ◄───────────────── │   sandbox loft   │
+└──────────────┘   flight.delivered └──────────────────┘
+       ▲                webhook
+       └── renders: queued → in_flight → delivered
+```
+
+## Steps
+
+<Steps>
+<Step>
+
+### Create a test key
+
+Open the [dashboard](https://dashboard.pigeonpost.dev), switch your loft to **Test mode**, and create a key. Test keys are prefixed `pgn_test_…` and are capped at 60 requests/min — plenty for one status page.
+
+Export it so the SDK can find it:
+
+```bash
+export PIGEONPOST_API_KEY="pgn_test_your_key_here"
+```
+
+<Callout variant="warning">
+
+Never ship a `pgn_live_…` key to the browser. The status page calls the API from your server; the browser only ever talks to your server.
+
+</Callout>
+
+</Step>
+<Step>
+
+### Dispatch a pigeon
+
+When a visitor clicks **Dispatch**, your server creates a pigeon. Send an `Idempotency-Key` so a double-click doesn't launch two birds.
+
+<Tabs>
+<Tab label="Node">
+
+```js
+// server.js
+import { PigeonPost } from "@pigeonpost/node";
+
+const pigeon = new PigeonPost({
+  apiKey: process.env.PIGEONPOST_API_KEY,
+  baseURL: "https://api.sandbox.pigeonpost.dev/v1",
+});
+
+export async function dispatch(req, res) {
+  const sent = await pigeon.pigeons.create(
+    {
+      recipient: "ada@example.com",
+      message: "Your status page works. 🐦",
+      metadata: { source: "status-page" },
+    },
+    { idempotencyKey: req.body.requestId },
+  );
+
+  // sent.id is "pgn_…", sent.flight.id is "flt_…"
+  res.json({ pigeonId: sent.id, flightId: sent.flight.id });
+}
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+# server.py
+import os
+from pigeonpost import PigeonPost
+
+pigeon = PigeonPost(
+    api_key=os.environ["PIGEONPOST_API_KEY"],
+    base_url="https://api.sandbox.pigeonpost.dev/v1",
+)
+
+def dispatch(request):
+    sent = pigeon.pigeons.create(
+        recipient="ada@example.com",
+        message="Your status page works. 🐦",
+        metadata={"source": "status-page"},
+        idempotency_key=request.json["requestId"],
+    )
+    # sent.id is "pgn_…", sent.flight.id is "flt_…"
+    return {"pigeonId": sent.id, "flightId": sent.flight.id}
+```
+
+</Tab>
+</Tabs>
+
+Stash the returned `flight.id` (a `flt_…`) keyed by the visitor's session — you'll match the webhook back to it in step 5.
+
+</Step>
+<Step>
+
+### Register a webhook for delivery
+
+Tell Pigeon Post where to ping you when a flight lands. Subscribe to just the events the status page cares about.
+
+```bash
+curl -X POST https://api.sandbox.pigeonpost.dev/v1/webhooks \
+  -H "Authorization: Bearer pgn_test_your_key_here" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: status-page-hook-1" \
+  -d '{
+    "url": "https://your-tunnel.ngrok.app/webhooks/pigeon",
+    "events": ["flight.launched", "flight.delivered", "flight.lost"]
+  }'
+```
+
+The response includes the webhook id (`whk_…`) and a signing secret (`whsec_…`). **Copy the secret now** — it's only shown once. Store it as an environment variable:
+
+```bash
+export PIGEONPOST_WEBHOOK_SECRET="whsec_the_secret_from_the_response"
+```
+
+</Step>
+<Step>
+
+### Verify the `Pigeon-Signature`
+
+Every webhook delivery carries a `Pigeon-Signature` header: an HMAC-SHA256 of the raw request body, keyed by your `whsec_…` secret. Reject anything that doesn't match, or anyone could fake a delivery.
+
+<Callout variant="danger">
+
+Compute the HMAC over the **raw, unparsed** request body. If your framework parses JSON before you can read the bytes, you'll hash a re-serialized string and every signature will fail.
+
+</Callout>
+
+<Tabs>
+<Tab label="Node">
+
+```js
+import crypto from "node:crypto";
+
+function verify(rawBody, header, secret) {
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody, "utf8")
+    .digest("hex");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(header ?? "");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// express, with the raw body preserved
+app.post("/webhooks/pigeon", express.raw({ type: "*/*" }), (req, res) => {
+  const ok = verify(req.body, req.get("Pigeon-Signature"), process.env.PIGEONPOST_WEBHOOK_SECRET);
+  if (!ok) return res.sendStatus(401);
+
+  const event = JSON.parse(req.body.toString("utf8"));
+  handleEvent(event); // step 5
+  res.sendStatus(200);
+});
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+import hmac, hashlib, os
+
+def verify(raw_body: bytes, header: str, secret: str) -> bool:
+    expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header or "")
+
+# flask, reading the raw body
+@app.post("/webhooks/pigeon")
+def pigeon_webhook():
+    raw = request.get_data()  # raw bytes, before JSON parsing
+    if not verify(raw, request.headers.get("Pigeon-Signature"), os.environ["PIGEONPOST_WEBHOOK_SECRET"]):
+        return "", 401
+
+    event = request.get_json()
+    handle_event(event)  # step 5
+    return "", 200
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+### Render live status
+
+Each webhook body looks like this:
+
+```json
+{
+  "type": "flight.delivered",
+  "data": {
+    "flight": {
+      "id": "flt_8Jk2p",
+      "pigeon_id": "pgn_4Qm9z",
+      "status": "delivered",
+      "delivered_at": "2026-06-14T09:21:04Z"
+    }
+  }
+}
+```
+
+Match `data.flight.id` back to the `flt_…` you stashed in step 2 and push the new status to the browser (Server-Sent Events or a websocket both work well):
+
+```js
+function handleEvent(event) {
+  const { id, status } = event.data.flight;
+  // status is one of: queued | in_flight | delivered | lost | returned
+  statusByFlight.set(id, status);
+  broadcast(id, status); // -> updates the page in real time
+}
+```
+
+A `flight.delivered` flips the badge to green. A `flight.lost` flips it red — and because lost pigeons are auto-refunded, you can reassure the visitor that they weren't charged. If you ever miss a webhook, you can always reconcile by calling [`GET /flights/{id}`](/api-reference#retrieve-a-flight) directly.
+
+</Step>
+</Steps>
+
+## You're done
+
+Click **Dispatch** in the sandbox and watch the badge walk from `queued` to `in_flight` to `delivered`. That's a complete, signature-verified, event-driven integration — the same shape you'd ship to production by swapping the base URL and your `pgn_test_…` key for `pgn_live_…`.
+
+<Callout variant="tip">
+
+Want retries, replay protection, and the full event catalog (`pigeon.dispatched`, `pigeon.returned`, `pigeon.recalled`, and friends)? The [Webhooks guide](/guides/webhooks) covers hardening your endpoint for production traffic.
+
+</Callout>

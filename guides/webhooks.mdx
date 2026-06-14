@@ -1,0 +1,111 @@
+---
+title: Webhooks
+description: Subscribe to flight and pigeon events, verify the Pigeon-Signature, and handle retries reliably.
+icon: webhook
+sidebar_position: 3
+---
+
+# Webhooks
+
+Webhooks let Pigeon Post call your server the moment something happens to a bird, so you do not have to poll [flights](/guides/tracking-flights). Register an endpoint once with `POST /webhooks`, then receive signed event deliveries as pigeons are dispatched, launched, delivered, lost, returned, or recalled.
+
+## Subscribe to events
+
+```bash
+curl https://api.pigeonpost.dev/v1/webhooks \
+  -H "Authorization: Bearer pgn_live_…" \
+  -d url="https://hooks.acme.example/pigeonpost" \
+  -d "events[]=flight.delivered" \
+  -d "events[]=flight.lost"
+```
+
+The response returns a webhook object with an id (`whk_…`) and a signing secret (`whsec_…`). **Store the secret** — you will need it to verify every delivery. List your endpoints any time with `GET /webhooks`.
+
+Available events: `pigeon.dispatched`, `flight.launched`, `flight.delivered`, `flight.lost`, `pigeon.returned`, `pigeon.recalled`.
+
+## Verify the signature
+
+Every delivery carries a `Pigeon-Signature` header: an HMAC-SHA256 of the raw request body, keyed with your `whsec_…` secret. Compute the HMAC yourself and compare it in constant time. Reject anything that does not match.
+
+<Callout variant="warning">
+
+Verify against the **raw, unparsed** request body. If your framework parses JSON before you can read the bytes, the signature will never match. Disable body parsing on the webhook route.
+
+</Callout>
+
+<Tabs>
+<Tab label="Node">
+
+```js
+import crypto from "node:crypto";
+
+function verify(rawBody, header, secret) {
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(header || "");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Express, with express.raw({ type: "application/json" }):
+app.post("/pigeonpost", (req, res) => {
+  if (!verify(req.body, req.get("Pigeon-Signature"), process.env.WHSEC)) {
+    return res.status(400).send("bad signature");
+  }
+  const event = JSON.parse(req.body);
+  console.log(event.type); // e.g. "flight.delivered"
+  res.sendStatus(200);
+});
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+import hashlib
+import hmac
+
+def verify(raw_body: bytes, header: str, secret: str) -> bool:
+    expected = hmac.new(
+        secret.encode(), raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, header or "")
+
+# Flask:
+@app.post("/pigeonpost")
+def receive():
+    if not verify(request.get_data(), request.headers.get("Pigeon-Signature"), WHSEC):
+        return "bad signature", 400
+    event = request.get_json()
+    print(event["type"])  # e.g. "flight.delivered"
+    return "", 200
+```
+
+</Tab>
+</Tabs>
+
+## Retry behavior
+
+Respond with a `2xx` quickly — ideally within five seconds. Any non-`2xx` response, timeout, or connection failure is treated as a failed delivery, and Pigeon Post retries with exponential backoff for up to 24 hours. Because retries (and rare network hiccups) can deliver the same event more than once, **make your handler idempotent**: key on the event id and ignore duplicates.
+
+## FAQ
+
+<Accordion>
+<AccordionItem title="I missed some events while my endpoint was down — can I recover them?">
+
+Yes. Pigeon Post retries failed deliveries with backoff for 24 hours, so transient downtime usually self-heals. For anything older, reconcile by polling `GET /flights/{id}` for the affected pigeons — webhooks are a convenience, not the system of record.
+
+</AccordionItem>
+<AccordionItem title="My signature check keeps failing — what am I doing wrong?">
+
+Almost always it is body parsing. Sign the exact bytes you received, before any JSON middleware touches them. Also confirm you are using the `whsec_…` secret for the specific endpoint that received the call, comparing the hex digest in constant time.
+
+</AccordionItem>
+<AccordionItem title="How do I test webhooks locally?">
+
+Point a webhook at a tunnel to your machine (any reverse-tunnel tool works), or use the `pigeon` CLI's forwarder: `pigeon webhooks forward --to localhost:3000/pigeonpost`. Test-mode events are signed with your test endpoint's `whsec_…`, so your verification path runs exactly as it will in production.
+
+</AccordionItem>
+</Accordion>

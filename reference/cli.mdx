@@ -1,0 +1,133 @@
+---
+title: CLI
+description: The pigeon command-line tool — install it, log in, dispatch pigeons, tail flights, send flocks, and forward webhooks to your local machine.
+icon: terminal
+sidebar_position: 2
+---
+
+# The `pigeon` CLI
+
+`pigeon` is the official command-line companion to the Pigeon Post API. Use it to dispatch from your terminal, watch flights in real time, blast out a flock from a CSV, and forward live webhook events to a local server while you develop.
+
+## Install
+
+<Tabs>
+<Tab label="macOS">
+
+```bash
+brew install pigeonpost/tap/pigeon
+```
+
+</Tab>
+<Tab label="Linux">
+
+```bash
+brew install pigeonpost/tap/pigeon
+# or, without Homebrew:
+curl -fsSL https://dashboard.pigeonpost.dev/install.sh | sh
+```
+
+</Tab>
+<Tab label="Windows">
+
+```powershell
+scoop bucket add pigeonpost https://github.com/pigeonpost/scoop-bucket
+scoop install pigeon
+```
+
+</Tab>
+</Tabs>
+
+Verify the install:
+
+```bash
+pigeon --version
+```
+
+## First-run setup
+
+<Steps>
+<Step>
+
+Authenticate against your loft. This opens the [dashboard](https://dashboard.pigeonpost.dev) in your browser to authorize the CLI, then stores a key locally.
+
+```bash
+pigeon login
+```
+
+</Step>
+<Step>
+
+Confirm you are pointed at the right environment. Pass `--test` to scope commands to the sandbox.
+
+```bash
+pigeon login --test
+```
+
+</Step>
+<Step>
+
+Dispatch your first pigeon to make sure everything is wired up.
+
+```bash
+pigeon dispatch --to ada@example.com --message "First flight from the CLI"
+```
+
+</Step>
+</Steps>
+
+<Callout variant="tip">
+
+Run `pigeon login --test` in your day-to-day shell so stray commands never dispatch a live pigeon by accident. Switch to a live key only in CI or when you genuinely mean to fly for real.
+
+</Callout>
+
+## Core commands
+
+### `pigeon login`
+
+Authorizes the CLI and stores credentials. Add `--test` for a sandbox key.
+
+```bash
+pigeon login
+pigeon login --test
+```
+
+### `pigeon dispatch`
+
+Sends a single pigeon. Carries either a `--message` or a `--parcel` file, with optional `--route` and `--metadata`.
+
+```bash
+pigeon dispatch \
+  --to ada@example.com \
+  --message "Hello from the loft" \
+  --route rt_express \
+  --metadata order_id=1234
+```
+
+### `pigeon flights tail`
+
+Streams flight status transitions (`queued` → `in_flight` → `delivered`/`lost`/`returned`) live in your terminal — handy for watching a dispatch land.
+
+```bash
+pigeon flights tail
+pigeon flights tail --id flt_8c1f2a9b
+```
+
+### `pigeon flocks send`
+
+Sends a batch of up to 500 pigeons from a CSV (one recipient per row). Returns the `flk_…` id so you can track the whole flock.
+
+```bash
+pigeon flocks send --file recipients.csv --message "Release notes are out!"
+```
+
+### `pigeon webhooks listen`
+
+Forwards live webhook events from Pigeon Post to a local URL so you can develop handlers without deploying. Prints each event and its `Pigeon-Signature` so you can test verification.
+
+```bash
+pigeon webhooks listen --forward-to http://localhost:3000/webhooks
+```
+
+Pair this with the [Webhooks guide](/guides/webhooks) to verify signatures end to end. For the equivalent programmatic flows, see the [SDKs](/reference/sdks).

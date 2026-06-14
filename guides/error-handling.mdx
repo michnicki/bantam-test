@@ -1,0 +1,127 @@
+---
+title: Error Handling
+description: Understand the error envelope, every error type the API can return, and how to retry safely.
+icon: triangle-alert
+sidebar_position: 6
+---
+
+# Error Handling
+
+Every error the Pigeon Post API returns shares one predictable shape, so you can write a single handler and branch on `type` and `code`. The HTTP status code mirrors the error `type`, and `param` points at the offending field when one applies.
+
+## The error envelope
+
+```json
+{
+  "error": {
+    "type": "invalid_request_error",
+    "code": "recipient_invalid",
+    "message": "recipient is not a valid address",
+    "param": "recipient"
+  }
+}
+```
+
+- **`type`** — the broad category (and the HTTP status). Branch on this.
+- **`code`** — a stable, machine-readable specifier within the type.
+- **`message`** — human-readable, for your logs. Do not parse it.
+- **`param`** — the field at fault, or `null`.
+
+## Error types
+
+| Type | HTTP | When it happens | Retry? |
+|---|---|---|---|
+| `invalid_request_error` | 400 | Malformed request — bad params, missing field, both `message` and `parcel`. | No — fix the request. |
+| `authentication_error` | 401 | Missing or invalid API key. | No — fix the key. |
+| `permission_error` | 403 | The key is valid but not allowed to do this. | No. |
+| `not_found_error` | 404 | No such pigeon, flight, flock, or webhook. | No. |
+| `pigeon_lost_error` | 422 | A bird failed to arrive. Lost pigeons auto-refund. | No — investigate; resend a new pigeon if needed. |
+| `rate_limit_error` | 429 | You exceeded your per-minute ceiling. | Yes — after `Retry-After`. |
+| `api_error` | 500 | Something went wrong on our end. | Yes — with backoff. |
+
+## Handling each type
+
+<Callout variant="info">
+
+**`invalid_request_error` (400).** This is a bug in the request, not a transient fault. Read `param` to find the bad field, fix it, and resend. Retrying unchanged will fail identically.
+
+</Callout>
+
+<Callout variant="warning">
+
+**`rate_limit_error` (429).** Expected under load. Wait for the `Retry-After` seconds, then retry with exponential backoff. Because dispatches carry an `Idempotency-Key`, the retry will not launch a duplicate bird. See [rate limits](/guides/rate-limits).
+
+</Callout>
+
+<Callout variant="danger">
+
+**`pigeon_lost_error` (422).** The pigeon did not make it. The charge is automatically refunded, so do not blindly retry the same dispatch — decide whether the message still needs sending, then dispatch a fresh pigeon. Follow `flight.lost` via [webhooks](/guides/webhooks) to catch these proactively.
+
+</Callout>
+
+## Retrying safely
+
+Retry only the **transient** types — `rate_limit_error` and `api_error` — using exponential backoff with jitter, and always send the same `Idempotency-Key` so a retried `POST` cannot double-dispatch.
+
+<Tabs>
+<Tab label="Node">
+
+```js
+import { PigeonPost, PigeonPostError } from "@pigeonpost/node";
+
+const pigeonpost = new PigeonPost({ apiKey: "pgn_live_…" });
+
+try {
+  const pigeon = await pigeonpost.pigeons.create(
+    { recipient: "ops@acme.example", message: "Deploy complete 🚀" },
+    { idempotencyKey: "dispatch-2718", maxRetries: 3 },
+  );
+  console.log(pigeon.id);
+} catch (err) {
+  if (err instanceof PigeonPostError) {
+    switch (err.type) {
+      case "rate_limit_error":
+      case "api_error":
+        // SDK already retried; escalate or queue for later.
+        break;
+      case "invalid_request_error":
+        console.error("Fix:", err.param, err.message);
+        break;
+      default:
+        throw err;
+    }
+  } else {
+    throw err;
+  }
+}
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+from pigeonpost import PigeonPost, PigeonPostError
+
+client = PigeonPost(api_key="pgn_live_…", max_retries=3)
+
+try:
+    pigeon = client.pigeons.create(
+        recipient="ops@acme.example",
+        message="Deploy complete 🚀",
+        idempotency_key="dispatch-2718",
+    )
+    print(pigeon.id)
+except PigeonPostError as err:
+    if err.type in ("rate_limit_error", "api_error"):
+        # SDK already retried; escalate or queue for later.
+        pass
+    elif err.type == "invalid_request_error":
+        print("Fix:", err.param, err.message)
+    else:
+        raise
+```
+
+</Tab>
+</Tabs>
+
+Both SDKs retry the transient types for you when you set a retry count; the handlers above are for what to do once retries are exhausted. For the full status reference, see the [API reference](/api-reference).

@@ -1,0 +1,93 @@
+---
+title: Sending Messages
+description: Dispatch a pigeon carrying a message or a parcel, pick the right route, and make your requests safely retryable.
+icon: send
+sidebar_position: 1
+---
+
+<Snippet name="auth-note" />
+
+# Sending Messages
+
+Every dispatch is a single `POST /pigeons`. You give the bird a `recipient` and either a `message` (text) or a `parcel` (a structured payload), and Pigeon Post handles the flying. The response is a pigeon object whose `status` begins at `queued` and whose `flight` you can follow over on [tracking flights](/guides/tracking-flights).
+
+## Message vs. parcel
+
+- Use **`message`** for short, human-readable text — deploy notifications, alerts, "the eagle has landed."
+- Use **`parcel`** when you need to deliver a structured payload (an object) the recipient's system will parse.
+
+Send exactly one of the two. Sending both is an `invalid_request_error`.
+
+## Dispatch a pigeon
+
+<Tabs>
+<Tab label="curl">
+
+```bash
+curl https://api.pigeonpost.dev/v1/pigeons \
+  -H "Authorization: Bearer pgn_live_…" \
+  -H "Idempotency-Key: dispatch-2718" \
+  -d recipient="ops@acme.example" \
+  -d message="Deploy complete 🚀" \
+  -d route="rt_express"
+```
+
+</Tab>
+<Tab label="Node">
+
+```js
+import { PigeonPost } from "@pigeonpost/node";
+
+const pigeonpost = new PigeonPost({ apiKey: "pgn_live_…" });
+
+const pigeon = await pigeonpost.pigeons.create(
+  {
+    recipient: "ops@acme.example",
+    message: "Deploy complete 🚀",
+    route: "rt_express",
+  },
+  { idempotencyKey: "dispatch-2718" },
+);
+
+console.log(pigeon.id, pigeon.flight); // pgn_8f3kQ2 flt_b21Lm9
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+from pigeonpost import PigeonPost
+
+client = PigeonPost(api_key="pgn_live_…")
+
+pigeon = client.pigeons.create(
+    recipient="ops@acme.example",
+    message="Deploy complete 🚀",
+    route="rt_express",
+    idempotency_key="dispatch-2718",
+)
+
+print(pigeon.id, pigeon.flight)  # pgn_8f3kQ2 flt_b21Lm9
+```
+
+</Tab>
+</Tabs>
+
+## Choosing a route
+
+The optional `route` decides how the bird flies:
+
+- **`rt_express`** — straight line, fastest wingtime. Use it for anything time-sensitive.
+- **`rt_scenic`** — relaxed pace, easier on the pigeon's rest periods, lower cost. Good for non-urgent digests.
+
+Omit `route` and Pigeon Post picks `rt_express` from the nearest aviary for you.
+
+<Callout variant="tip">
+
+Pass an `aviary` in `metadata` only when you need a specific region (`aviary_eu_nest`, `aviary_us_coop`, `aviary_ap_loft`). Otherwise the closest available coop is chosen automatically — see [Aviaries](/concepts/aviaries).
+
+</Callout>
+
+## Idempotency keys
+
+POST requests can be retried safely with an `Idempotency-Key` header. If a dispatch times out and you resend the same key within 24 hours, you get the original pigeon back instead of launching a second bird. Generate one key per logical dispatch — a UUID works well. For retry strategy on errors, see [error handling](/guides/error-handling).

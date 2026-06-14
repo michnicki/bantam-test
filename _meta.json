@@ -1,0 +1,10 @@
+{
+  "getting-started": { "label": "Getting started", "sort": 1 },
+  "guides": { "label": "Guides", "sort": 2 },
+  "concepts": { "label": "Concepts", "sort": 3 },
+  "tutorials": { "label": "Tutorials", "sort": 4 },
+  "api-reference": { "label": "API reference", "sort": 5 },
+  "reference": { "label": "Reference", "sort": 6 },
+  "internal": { "label": "Internal", "sort": 7 },
+  "github": { "external": "https://github.com/pigeonpost/pigeon-post-docs" }
+}

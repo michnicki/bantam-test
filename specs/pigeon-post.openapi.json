@@ -1,0 +1,517 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Pigeon Post API",
+    "version": "1.4.0",
+    "summary": "Carrier-pigeon-as-a-service for developers.",
+    "description": "The Pigeon Post API lets you dispatch pigeons carrying messages or small parcels, track their flights in real time, group them into flocks, and subscribe to delivery webhooks. All requests are authenticated with a Bearer API key and go to https://api.pigeonpost.dev/v1.",
+    "contact": {
+      "name": "Pigeon Post Support",
+      "url": "https://pigeonpost.dev/support",
+      "email": "support@pigeonpost.dev"
+    },
+    "license": { "name": "Proprietary" }
+  },
+  "servers": [
+    { "url": "https://api.pigeonpost.dev/v1", "description": "Production" },
+    { "url": "https://api.sandbox.pigeonpost.dev/v1", "description": "Sandbox (test keys only)" }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "Pigeons", "description": "Dispatch and manage individual pigeons." },
+    { "name": "Flights", "description": "Track a pigeon's journey from launch to delivery." },
+    { "name": "Flocks", "description": "Dispatch many pigeons in a single batch." },
+    { "name": "Aviaries", "description": "Regional launch sites your pigeons depart from." },
+    { "name": "Webhooks", "description": "Subscribe to delivery lifecycle events." }
+  ],
+  "paths": {
+    "/pigeons": {
+      "get": {
+        "operationId": "listPigeons",
+        "summary": "List pigeons",
+        "description": "Returns a cursor-paginated list of pigeons, most recent first.",
+        "tags": ["Pigeons"],
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/StartingAfter" },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by flight status.",
+            "schema": { "$ref": "#/components/schemas/FlightStatus" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of pigeons.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PigeonList" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "dispatchPigeon",
+        "summary": "Dispatch a pigeon",
+        "description": "Sends a new pigeon carrying a message or parcel to a recipient. Provide an Idempotency-Key header to safely retry dispatches.",
+        "tags": ["Pigeons"],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PigeonCreate" },
+              "examples": {
+                "message": {
+                  "summary": "Dispatch a message",
+                  "value": {
+                    "recipient": "ops@acme.example",
+                    "message": "Deploy complete 🚀",
+                    "route": "rt_express"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The pigeon was accepted for dispatch.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Pigeon" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/PigeonLost" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/pigeons/{pigeonId}": {
+      "get": {
+        "operationId": "getPigeon",
+        "summary": "Retrieve a pigeon",
+        "tags": ["Pigeons"],
+        "parameters": [{ "$ref": "#/components/parameters/PigeonId" }],
+        "responses": {
+          "200": {
+            "description": "The requested pigeon.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Pigeon" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/pigeons/{pigeonId}/recall": {
+      "post": {
+        "operationId": "recallPigeon",
+        "summary": "Recall a pigeon",
+        "description": "Attempts to turn a pigeon around mid-flight. Only works while in_flight.",
+        "tags": ["Pigeons"],
+        "parameters": [{ "$ref": "#/components/parameters/PigeonId" }],
+        "responses": {
+          "200": {
+            "description": "The recalled pigeon.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Pigeon" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/flights/{flightId}": {
+      "get": {
+        "operationId": "getFlight",
+        "summary": "Retrieve a flight",
+        "description": "Returns the live tracking record for a pigeon's journey.",
+        "tags": ["Flights"],
+        "parameters": [
+          {
+            "name": "flightId",
+            "in": "path",
+            "required": true,
+            "description": "The flight identifier, e.g. flt_b21Lm9.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The requested flight.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Flight" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/flocks": {
+      "post": {
+        "operationId": "dispatchFlock",
+        "summary": "Dispatch a flock",
+        "description": "Dispatches up to 500 pigeons in a single batch.",
+        "tags": ["Flocks"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["pigeons"],
+                "properties": {
+                  "pigeons": {
+                    "type": "array",
+                    "maxItems": 500,
+                    "items": { "$ref": "#/components/schemas/PigeonCreate" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The flock was accepted.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Flock" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/aviaries": {
+      "get": {
+        "operationId": "listAviaries",
+        "summary": "List aviaries",
+        "description": "Lists the regional launch sites available to your loft.",
+        "tags": ["Aviaries"],
+        "responses": {
+          "200": {
+            "description": "A list of aviaries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": { "type": "string", "const": "list" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Aviary" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "operationId": "listWebhooks",
+        "summary": "List webhook endpoints",
+        "tags": ["Webhooks"],
+        "responses": {
+          "200": {
+            "description": "A list of webhook endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": { "type": "string", "const": "list" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/WebhookEndpoint" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWebhook",
+        "summary": "Create a webhook endpoint",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url", "events"],
+                "properties": {
+                  "url": { "type": "string", "format": "uri" },
+                  "events": {
+                    "type": "array",
+                    "items": { "$ref": "#/components/schemas/WebhookEvent" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WebhookEndpoint" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API key (pgn_live_… or pgn_test_…)",
+        "description": "Pass your secret key as Authorization: Bearer pgn_live_…."
+      }
+    },
+    "parameters": {
+      "PigeonId": {
+        "name": "pigeonId",
+        "in": "path",
+        "required": true,
+        "description": "The pigeon identifier, e.g. pgn_8f3kQ2.",
+        "schema": { "type": "string" }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Page size (1–100, default 20).",
+        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+      },
+      "StartingAfter": {
+        "name": "starting_after",
+        "in": "query",
+        "description": "A pigeon ID to paginate after (exclusive).",
+        "schema": { "type": "string" }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "A unique key to make a dispatch retry-safe.",
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid API key.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "type": "authentication_error",
+                "code": "missing_key",
+                "message": "No API key provided."
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The resource does not exist.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Too many requests — back off and retry after the molting window.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds to wait before retrying.",
+            "schema": { "type": "integer" }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "PigeonLost": {
+        "description": "The pigeon could not complete its journey.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "type": "pigeon_lost_error",
+                "code": "route_storm",
+                "message": "The pigeon was blown off course by a storm. A refund was issued."
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "FlightStatus": {
+        "type": "string",
+        "description": "Where a pigeon is in its journey.",
+        "enum": ["queued", "in_flight", "delivered", "lost", "returned"]
+      },
+      "Pigeon": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "examples": ["pgn_8f3kQ2"] },
+          "object": { "type": "string", "const": "pigeon" },
+          "recipient": { "type": "string" },
+          "message": { "type": ["string", "null"] },
+          "route": { "type": "string" },
+          "aviary": { "type": "string", "examples": ["aviary_eu_nest"] },
+          "status": { "$ref": "#/components/schemas/FlightStatus" },
+          "flight": { "type": "string", "examples": ["flt_b21Lm9"] },
+          "created_at": { "type": "integer", "description": "Unix timestamp (seconds)." }
+        },
+        "required": ["id", "object", "recipient", "status", "created_at"]
+      },
+      "PigeonCreate": {
+        "type": "object",
+        "required": ["recipient"],
+        "properties": {
+          "recipient": { "type": "string", "description": "Where the pigeon should land." },
+          "message": {
+            "type": "string",
+            "description": "A short note for the recipient. Mutually exclusive with parcel."
+          },
+          "parcel": {
+            "type": "string",
+            "description": "Reference to an uploaded parcel. Mutually exclusive with message."
+          },
+          "route": {
+            "type": "string",
+            "description": "Routing preference, e.g. rt_express or rt_scenic.",
+            "default": "rt_express"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "PigeonList": {
+        "type": "object",
+        "properties": {
+          "object": { "type": "string", "const": "list" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Pigeon" }
+          },
+          "has_more": { "type": "boolean" }
+        },
+        "required": ["object", "data", "has_more"]
+      },
+      "Flight": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "examples": ["flt_b21Lm9"] },
+          "object": { "type": "string", "const": "flight" },
+          "pigeon": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/FlightStatus" },
+          "distance_km": { "type": "number" },
+          "eta": { "type": "integer", "description": "Estimated arrival as a Unix timestamp (seconds)." }
+        }
+      },
+      "Flock": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "examples": ["flk_QZ1m7"] },
+          "object": { "type": "string", "const": "flock" },
+          "size": { "type": "integer" },
+          "pigeons": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Pigeon" }
+          }
+        }
+      },
+      "Aviary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "examples": ["aviary_eu_nest"] },
+          "region": { "type": "string", "examples": ["eu-west"] },
+          "capacity": { "type": "integer" }
+        }
+      },
+      "WebhookEvent": {
+        "type": "string",
+        "enum": [
+          "pigeon.dispatched",
+          "flight.launched",
+          "flight.delivered",
+          "flight.lost",
+          "pigeon.returned",
+          "pigeon.recalled"
+        ]
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "examples": ["whk_5kP2a"] },
+          "object": { "type": "string", "const": "webhook_endpoint" },
+          "url": { "type": "string", "format": "uri" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          },
+          "secret": { "type": "string", "description": "Signing secret, prefixed whsec_." }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "invalid_request_error",
+                  "authentication_error",
+                  "permission_error",
+                  "not_found_error",
+                  "rate_limit_error",
+                  "pigeon_lost_error",
+                  "api_error"
+                ]
+              },
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "param": { "type": ["string", "null"] }
+            },
+            "required": ["type", "message"]
+          }
+        },
+        "required": ["error"]
+      }
+    }
+  }
+}

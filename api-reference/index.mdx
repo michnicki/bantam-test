@@ -1,0 +1,166 @@
+---
+title: API Reference
+description: The Pigeon Post REST API — base URL, authentication, pagination, idempotency, and the full interactive endpoint reference.
+icon: code
+sidebar_position: 0
+---
+
+<Snippet name="header" />
+
+The Pigeon Post API is a conventional, resource-oriented REST API. You dispatch pigeons, track their flights, batch them into flocks, and subscribe to webhooks — all over plain HTTPS with JSON request and response bodies. Predictable URLs, standard verbs, and HTTP status codes that mean what you think they mean. No ravens required.
+
+## Base URL
+
+All requests go to a versioned base URL. Use the sandbox while you build — sandbox pigeons never actually leave the loft, so you can dispatch as many as you like without anyone getting a parcel.
+
+| Environment | Base URL |
+| --- | --- |
+| Production | `https://api.pigeonpost.dev/v1` |
+| Sandbox | `https://api.sandbox.pigeonpost.dev/v1` |
+
+<Snippet name="base-url" />
+
+## Authentication
+
+The API authenticates with a secret key sent as a Bearer token. Live keys are prefixed `pgn_live_…` and act on real pigeons; test keys are prefixed `pgn_test_…` and stay in the sandbox. Grab a key from your [dashboard](https://dashboard.pigeonpost.dev).
+
+```http
+Authorization: Bearer pgn_live_4f3c9a2b7e1d8c0a5b6f
+```
+
+<Snippet name="auth-note" />
+
+<Callout variant="warning">
+
+Treat secret keys like passwords. Never embed a live key in client-side code, a public repo, or a mobile app. If a key escapes the loft, roll it from the dashboard immediately.
+
+</Callout>
+
+## Make your first call
+
+Dispatch a single pigeon carrying a short message. The example below sends a test pigeon — swap in a live key and the production base URL when you are ready to let it fly for real.
+
+<Tabs>
+<Tab label="curl">
+
+```bash
+curl https://api.pigeonpost.dev/v1/pigeons \
+  -H "Authorization: Bearer pgn_test_4f3c9a2b7e1d8c0a5b6f" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: first-flight-001" \
+  -d '{
+    "recipient": "ada@example.com",
+    "message": "Hello from the loft!",
+    "route": "rt_express"
+  }'
+```
+
+</Tab>
+<Tab label="Node">
+
+```js
+import { PigeonPost } from "@pigeonpost/node";
+
+const pigeonpost = new PigeonPost("pgn_test_4f3c9a2b7e1d8c0a5b6f");
+
+const pigeon = await pigeonpost.pigeons.dispatch(
+  {
+    recipient: "ada@example.com",
+    message: "Hello from the loft!",
+    route: "rt_express",
+  },
+  { idempotencyKey: "first-flight-001" }
+);
+
+console.log(pigeon.id); // "pgn_..."
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+from pigeonpost import PigeonPost
+
+client = PigeonPost(api_key="pgn_test_4f3c9a2b7e1d8c0a5b6f")
+
+pigeon = client.pigeons.dispatch(
+    recipient="ada@example.com",
+    message="Hello from the loft!",
+    route="rt_express",
+    idempotency_key="first-flight-001",
+)
+
+print(pigeon.id)  # "pgn_..."
+```
+
+</Tab>
+</Tabs>
+
+A successful dispatch returns a `pigeon` object with an `id` of the form `pgn_…` and an associated flight you can track at `GET /flights/{id}`.
+
+<Callout variant="info">
+
+New here? The [Quickstart](/getting-started/quickstart) walks you from zero to a delivered pigeon in about five minutes, including how to verify delivery with a webhook.
+
+</Callout>
+
+## Pagination
+
+List endpoints (`GET /pigeons`, `GET /flocks`, and friends) are cursor-paginated. Pass `limit` (max `100`, default `20`) and `starting_after` with the `id` of the last item from the previous page.
+
+```json
+{
+  "object": "list",
+  "data": [
+    { "object": "pigeon", "id": "pgn_9a2b...", "...": "..." }
+  ],
+  "has_more": true
+}
+```
+
+Keep requesting with `starting_after` set to the last `id` until `has_more` is `false`.
+
+## Idempotency
+
+Every `POST` accepts an `Idempotency-Key` header. Send a unique key per logical operation; if a request is retried with the same key (after a network blip, say), the API replays the original response instead of dispatching a second pigeon. Keys are retained for 24 hours.
+
+## Rate limits
+
+Test keys are capped at **60 requests/minute**; live keys at **1000 requests/minute**. When you exceed the limit the API returns `429` with a `rate_limit_error` body and a `Retry-After` header telling you how many seconds to wait. Scheduled maintenance ("molting windows") is announced in advance on the dashboard.
+
+## Errors
+
+Errors come back with a non-2xx status and a JSON envelope:
+
+```json
+{
+  "error": {
+    "type": "invalid_request_error",
+    "code": "missing_recipient",
+    "message": "A recipient is required to dispatch a pigeon.",
+    "param": "recipient"
+  }
+}
+```
+
+| `type` | HTTP status |
+| --- | --- |
+| `invalid_request_error` | 400 |
+| `authentication_error` | 401 |
+| `permission_error` | 403 |
+| `not_found_error` | 404 |
+| `pigeon_lost_error` | 422 |
+| `rate_limit_error` | 429 |
+| `api_error` | 500 |
+
+A `pigeon_lost_error` means a pigeon failed to reach its destination — lost pigeons are auto-refunded, no support ticket needed.
+
+## Full endpoint reference
+
+The complete, always-up-to-date endpoint reference — every parameter, every response field, with a live "try it" playground — is generated automatically from our OpenAPI specification. Browse it in the navigation, and explore the related [SDKs](/reference/sdks) and [Glossary](/reference/glossary) for deeper context.
+
+## Postman collection
+
+Prefer to poke at the API in Postman? Import our collection to get every endpoint pre-configured with auth and example bodies.
+
+<FileAttachment href="/assets/pigeon-post-postman.json" filename="pigeon-post.postman_collection.json" size={20480} />

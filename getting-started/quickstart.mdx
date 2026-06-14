@@ -1,0 +1,117 @@
+---
+title: Quickstart
+description: Dispatch your first pigeon in five minutes.
+icon: rocket
+sidebar_position: 1
+---
+
+<Snippet name="header" />
+
+# Quickstart
+
+This guide takes you from zero to a pigeon in the air in about five minutes. You'll install an SDK, set your API key, dispatch a pigeon, and check its flight. We'll use a test key so nothing leaves the sandbox aviary.
+
+<Steps>
+<Step>
+
+**Install the SDK.** Pick your language and pull it in.
+
+```bash
+npm install @pigeonpost/node
+# or: pip install pigeonpost
+```
+
+</Step>
+<Step>
+
+**Set your key.** Copy a test key (`pgn_test_…`) from the [dashboard](https://dashboard.pigeonpost.dev) and export it so the SDK can find it.
+
+```bash
+export PIGEONPOST_API_KEY="pgn_test_…"
+```
+
+</Step>
+<Step>
+
+**Send a pigeon.** Dispatch a message to a recipient. The API returns a pigeon object with a `flight` you can track.
+
+</Step>
+<Step>
+
+**Check the flight.** Use the returned `flight` id (`flt_…`) to poll status — it moves from `queued` to `in_flight` to `delivered`.
+
+</Step>
+</Steps>
+
+## Dispatch a pigeon
+
+<Tabs>
+<Tab label="curl">
+
+```bash
+curl https://api.sandbox.pigeonpost.dev/v1/pigeons \
+  -H "Authorization: Bearer pgn_test_…" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient": "ops@acme.example",
+    "message": "Deploy complete 🚀"
+  }'
+```
+
+</Tab>
+<Tab label="Node">
+
+```js
+import PigeonPost from "@pigeonpost/node";
+
+const pigeonpost = new PigeonPost(process.env.PIGEONPOST_API_KEY);
+
+const pigeon = await pigeonpost.pigeons.create({
+  recipient: "ops@acme.example",
+  message: "Deploy complete 🚀",
+});
+
+console.log(pigeon.id, pigeon.flight);
+```
+
+</Tab>
+<Tab label="Python">
+
+```python
+import os
+from pigeonpost import PigeonPost
+
+client = PigeonPost(api_key=os.environ["PIGEONPOST_API_KEY"])
+
+pigeon = client.pigeons.create(
+    recipient="ops@acme.example",
+    message="Deploy complete 🚀",
+)
+
+print(pigeon.id, pigeon.flight)
+```
+
+</Tab>
+</Tabs>
+
+A successful dispatch returns a pigeon whose `status` is `in_flight` and whose `flight` field points at a trackable flight:
+
+```json
+{
+  "id": "pgn_8f3kQ2",
+  "object": "pigeon",
+  "recipient": "ops@acme.example",
+  "message": "Deploy complete 🚀",
+  "route": "rt_express",
+  "aviary": "aviary_eu_nest",
+  "status": "in_flight",
+  "flight": "flt_b21Lm9",
+  "created_at": 1718352000
+}
+```
+
+<Callout variant="tip">
+
+That's the whole loop: dispatch, then track. When you're ready for batch sends, webhooks, and routing, head over to the [guides](/guides).
+
+</Callout>

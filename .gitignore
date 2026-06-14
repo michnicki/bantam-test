@@ -1,0 +1,8 @@
+# This is a Bantam content repository — Git is the source of truth.
+# Nothing here needs building, but keep editor/OS cruft out of the tree.
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+node_modules/

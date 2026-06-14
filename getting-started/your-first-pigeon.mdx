@@ -1,0 +1,69 @@
+---
+title: Your first pigeon
+description: A guided tutorial — dispatch a pigeon, retrieve it, and track its flight to delivery.
+icon: bird
+sidebar_position: 3
+---
+
+<Snippet name="auth-note" />
+
+# Your first pigeon
+
+In this tutorial you'll walk through the full lifecycle of a single dispatch: send a pigeon, look it up by id, and poll its flight until it lands. We'll stay in the sandbox the whole way, so reach for a `pgn_test_…` key.
+
+<Steps>
+<Step>
+
+**Dispatch the pigeon.** Send a message to a recipient. The response includes the pigeon's id (`pgn_…`) and a `flight` id (`flt_…`) — hold on to both.
+
+```bash
+curl https://api.sandbox.pigeonpost.dev/v1/pigeons \
+  -H "Authorization: Bearer pgn_test_…" \
+  -H "Idempotency-Key: tutorial-001" \
+  -H "Content-Type: application/json" \
+  -d '{ "recipient": "ops@acme.example", "message": "First flight! 🐦" }'
+```
+
+</Step>
+<Step>
+
+**Retrieve the pigeon.** Fetch it back by id to confirm it was accepted and see its current `status`.
+
+```bash
+curl https://api.sandbox.pigeonpost.dev/v1/pigeons/pgn_8f3kQ2 \
+  -H "Authorization: Bearer pgn_test_…"
+```
+
+</Step>
+<Step>
+
+**Track the flight.** Poll the flight id until `status` reads `delivered`. In the sandbox this takes only a few seconds.
+
+```bash
+curl https://api.sandbox.pigeonpost.dev/v1/flights/flt_b21Lm9 \
+  -H "Authorization: Bearer pgn_test_…"
+```
+
+A flight moves through `queued` → `in_flight` → `delivered`. You may also see `returned` if the recipient couldn't be reached, or `lost` in the rare case a pigeon never arrives.
+
+</Step>
+</Steps>
+
+<Callout variant="info">
+
+Polling is fine for a tutorial, but in production you should subscribe to `flight.delivered` and `flight.lost` events instead of asking repeatedly. See [Webhooks](/guides/webhooks).
+
+</Callout>
+
+<Callout variant="tip">
+
+A `lost` flight is automatically refunded — you're never charged for a pigeon that doesn't arrive. You can also proactively cancel an in-flight dispatch with `POST /pigeons/{id}/recall`.
+
+</Callout>
+
+## Where to go next
+
+You've now completed a full round trip. From here:
+
+- Explore batch sends, routing, and webhook verification in the [guides](/guides).
+- Learn how pigeons, flights, and flocks fit together in [Pigeons](/concepts/pigeons).

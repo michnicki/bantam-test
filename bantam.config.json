@@ -1,0 +1,45 @@
+{
+  "general": {
+    "siteName": "Pigeon Post API Docs",
+    "locale": "en-US",
+    "publicAccess": true
+  },
+  "theming": {
+    "direction": "ember",
+    "defaultMode": "dark",
+    "accent": "#E2703A",
+    "logoPath": null,
+    "faviconPath": null,
+    "customCss": ""
+  },
+  "render": {
+    "componentAllowlist": [
+      "Callout",
+      "Tabs",
+      "Tab",
+      "Accordion",
+      "AccordionItem",
+      "Steps",
+      "Step",
+      "Snippet",
+      "FileAttachment",
+      "Embed"
+    ]
+  },
+  "search": {
+    "indexDrafts": false
+  },
+  "ai": {
+    "enabled": false
+  },
+  "git": {
+    "branch": "main",
+    "docsRoot": "."
+  },
+  "apiSpecs": [
+    {
+      "name": "Pigeon Post API",
+      "path": "specs/pigeon-post.openapi.json"
+    }
+  ]
+}

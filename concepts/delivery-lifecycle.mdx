@@ -1,0 +1,64 @@
+---
+title: Delivery Lifecycle
+description: The end-to-end journey of a pigeon, modeled as flight state transitions.
+icon: git-branch
+sidebar_position: 4
+---
+
+# Delivery Lifecycle
+
+Every dispatch is tracked by a [Flight](/concepts/pigeons), and that flight moves through a small set of states. Understanding these transitions tells you exactly where a pigeon is and what — if anything — you need to do about it.
+
+## The happy path
+
+<Steps>
+
+<Step title="Queued">
+
+The pigeon is created and waiting on a perch at its [Aviary](/concepts/aviaries) for an open launch window. Status: `queued`.
+
+</Step>
+
+<Step title="In flight">
+
+The pigeon launches and is en route along its chosen [Route](/concepts/routes), possibly taking a rest period or two on the scenic path. Status: `in_flight`.
+
+</Step>
+
+<Step title="Delivered">
+
+The pigeon reaches the recipient and the flight closes successfully. Status: `delivered`. You'll receive a `flight.delivered` webhook if you've registered one.
+
+</Step>
+
+</Steps>
+
+## When things go sideways
+
+<Callout variant="warning">
+
+Not every flight ends in delivery. A flight becomes **`lost`** if the pigeon never arrives — these auto-refund, no support ticket required (a courtesy the Ravens never offered). A flight becomes **`returned`** when the recipient is unreachable or you recall the dispatch; the pigeon comes home and no charge applies. Both are terminal states, so listen for them on your [Webhooks](/api-reference).
+
+</Callout>
+
+## State machine
+
+```text
+                +----------+
+                |  queued  |
+                +----------+
+                     |
+                     v
+              +-------------+
+        +-----|  in_flight  |-----+
+        |     +-------------+     |
+        |            |            |
+        v            v            v
+  +-----------+ +-----------+ +-----------+
+  | delivered | |   lost    | | returned  |
+  +-----------+ +-----------+ +-----------+
+   (success)    (auto-refund) (unreachable
+                               / recalled)
+```
+
+`queued`, `in_flight`, `delivered`, `lost`, and `returned` are the only flight states. `delivered`, `lost`, and `returned` are terminal. For polling and subscription patterns, see [tracking flights](/guides/tracking-flights).
