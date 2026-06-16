@@ -1,15 +1,17 @@
 ---
 title: Webhooks
-description: Subscribe to flight and pigeon events, verify the Pigeon-Signature, and handle retries reliably.
+description: >-
+  Subscribe to flight and pigeon events, verify the Pigeon-Signature, and handle
+  retries reliably.
 icon: webhook
 sidebar_position: 3
 ---
 
-# Webhooks
+# Webhooks— UAT edit {#973fcfe4-8ff7-49b7-826c-30bd7d10d66c}
 
 Webhooks let Pigeon Post call your server the moment something happens to a bird, so you do not have to poll [flights](/guides/tracking-flights). Register an endpoint once with `POST /webhooks`, then receive signed event deliveries as pigeons are dispatched, launched, delivered, lost, returned, or recalled.
 
-## Subscribe to events
+## Subscribe to events {#006e115b-82f8-435a-ae68-fbea2c96a49a}
 
 ```bash
 curl https://api.pigeonpost.dev/v1/webhooks \
@@ -23,17 +25,17 @@ The response returns a webhook object with an id (`whk_…`) and a signing secre
 
 Available events: `pigeon.dispatched`, `flight.launched`, `flight.delivered`, `flight.lost`, `pigeon.returned`, `pigeon.recalled`.
 
-## Verify the signature
+## Verify the signature {#fce72341-05df-4b2f-9741-db8647a1bc4b}
 
 Every delivery carries a `Pigeon-Signature` header: an HMAC-SHA256 of the raw request body, keyed with your `whsec_…` secret. Compute the HMAC yourself and compare it in constant time. Reject anything that does not match.
 
-<Callout variant="warning">
+<Callout data-bantam-id="ddb665dc-9913-4613-8de3-ab3b98ecd419" variant="warning">
 
 Verify against the **raw, unparsed** request body. If your framework parses JSON before you can read the bytes, the signature will never match. Disable body parsing on the webhook route.
 
 </Callout>
 
-<Tabs>
+<Tabs data-bantam-id="fdbab909-3032-496d-9efe-b9643209f7f4">
 <Tab label="Node">
 
 ```js
@@ -86,13 +88,13 @@ def receive():
 </Tab>
 </Tabs>
 
-## Retry behavior
+## Retry behavior {#fdfdd90f-e9b1-4bcc-ac3d-997836edf3f2}
 
 Respond with a `2xx` quickly — ideally within five seconds. Any non-`2xx` response, timeout, or connection failure is treated as a failed delivery, and Pigeon Post retries with exponential backoff for up to 24 hours. Because retries (and rare network hiccups) can deliver the same event more than once, **make your handler idempotent**: key on the event id and ignore duplicates.
 
-## FAQ
+## FAQ {#9e0109ed-e329-4925-96c0-2c6d22aa39a9}
 
-<Accordion>
+<Accordion data-bantam-id="6df15d49-8ac0-4ef7-924d-bde910ab96d8">
 <AccordionItem title="I missed some events while my endpoint was down — can I recover them?">
 
 Yes. Pigeon Post retries failed deliveries with backoff for 24 hours, so transient downtime usually self-heals. For anything older, reconcile by polling `GET /flights/{id}` for the affected pigeons — webhooks are a convenience, not the system of record.
@@ -109,3 +111,5 @@ Point a webhook at a tunnel to your machine (any reverse-tunnel tool works), or 
 
 </AccordionItem>
 </Accordion>
+
+
